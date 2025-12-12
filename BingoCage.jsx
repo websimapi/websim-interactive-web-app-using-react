@@ -34,10 +34,10 @@ function BingoCage({
   const lastSimulatedFrame = useRef(-1);
   const FPS = 30;
   const TIME_STEP = 1 / FPS;
-  const SUB_STEPS = 6;
+  const SUB_STEPS = 10;
   const STEP_DT = TIME_STEP / SUB_STEPS;
   const CAGE_RADIUS = 160;
-  const BALL_RADIUS = 22;
+  const BALL_RADIUS = 19;
   const CAGE_Y = 100;
   const stateRef = useRef({
     scene: null,
@@ -237,7 +237,7 @@ function BingoCage({
   };
   const performSubStep = (dt, s, pProps) => {
     const CAGE_RADIUS2 = s.R;
-    const BALL_RADIUS2 = 22;
+    const BALL_RADIUS2 = 19;
     const RESTITUTION = 0.5;
     const FRICTION = 0.96;
     const GRAVITY = new THREE.Vector3(0, -980, 0);
@@ -287,7 +287,7 @@ function BingoCage({
       }
     }
     const nBalls = s.balls.length;
-    for (let iter = 0; iter < 3; iter++) {
+    for (let iter = 0; iter < 6; iter++) {
       for (let i = 0; i < nBalls; i++) {
         const bi = s.balls[i];
         if (bi.drawn || bi.sleeping) continue;
@@ -314,6 +314,16 @@ function BingoCage({
             }
           }
         }
+      }
+    }
+    for (const b of s.balls) {
+      if (b.drawn || b.sleeping) continue;
+      _v1.subVectors(b.pos, cagePos);
+      const dSq = _v1.lengthSq();
+      if (dSq > R_sq) {
+        const d = Math.sqrt(dSq);
+        _v1.multiplyScalar(R_inner / d);
+        b.pos.copy(cagePos).add(_v1);
       }
     }
     if (s.rotationSpeed < 0.05) {
@@ -459,7 +469,7 @@ function BingoCage({
     false,
     {
       fileName: "<stdin>",
-      lineNumber: 570,
+      lineNumber: 582,
       columnNumber: 5
     },
     this
