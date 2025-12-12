@@ -219,6 +219,7 @@ const BingoCardClip = ({ match = {} }) => {
                 tappable: false,
                 autoSpin: false,
                 controlledSpin: isSpinningNow,
+                spinSchedule: spinWindows,
                 drawnNumbers,
                 seed: 12345,
                 currentFrame: frame
@@ -264,7 +265,7 @@ const BingoCardClip = ({ match = {} }) => {
                     false,
                     {
                       fileName: "<stdin>",
-                      lineNumber: 242,
+                      lineNumber: 243,
                       columnNumber: 13
                     }
                   ),
@@ -281,7 +282,7 @@ const BingoCardClip = ({ match = {} }) => {
                       children: [
                         replayDraws.length === 0 && /* @__PURE__ */ jsxDEV("div", { style: { fontSize: 24, color: "#777", marginTop: 20 }, children: "Ready" }, void 0, false, {
                           fileName: "<stdin>",
-                          lineNumber: 266,
+                          lineNumber: 267,
                           columnNumber: 17
                         }),
                         replayDraws.map((d, idx) => {
@@ -306,12 +307,12 @@ const BingoCardClip = ({ match = {} }) => {
                               children: [
                                 /* @__PURE__ */ jsxDEV("div", { style: { fontSize: 32, fontWeight: 800, color: "#555", lineHeight: 1, marginTop: 4 }, children: letter }, void 0, false, {
                                   fileName: "<stdin>",
-                                  lineNumber: 288,
+                                  lineNumber: 289,
                                   columnNumber: 20
                                 }),
                                 /* @__PURE__ */ jsxDEV("div", { style: { fontSize: 34, fontWeight: 900, lineHeight: 1, marginTop: -2 }, children: d.number }, void 0, false, {
                                   fileName: "<stdin>",
-                                  lineNumber: 289,
+                                  lineNumber: 290,
                                   columnNumber: 20
                                 })
                               ]
@@ -320,7 +321,7 @@ const BingoCardClip = ({ match = {} }) => {
                             true,
                             {
                               fileName: "<stdin>",
-                              lineNumber: 273,
+                              lineNumber: 274,
                               columnNumber: 17
                             }
                           );
@@ -331,7 +332,7 @@ const BingoCardClip = ({ match = {} }) => {
                     true,
                     {
                       fileName: "<stdin>",
-                      lineNumber: 256,
+                      lineNumber: 257,
                       columnNumber: 13
                     }
                   )
@@ -341,7 +342,7 @@ const BingoCardClip = ({ match = {} }) => {
               true,
               {
                 fileName: "<stdin>",
-                lineNumber: 230,
+                lineNumber: 231,
                 columnNumber: 11
               }
             )
@@ -367,18 +368,18 @@ const BingoCardClip = ({ match = {} }) => {
                 false,
                 {
                   fileName: "<stdin>",
-                  lineNumber: 312,
+                  lineNumber: 313,
                   columnNumber: 19
                 }
               );
             })
           ) }, void 0, false, {
             fileName: "<stdin>",
-            lineNumber: 298,
+            lineNumber: 299,
             columnNumber: 11
           }) }, void 0, false, {
             fileName: "<stdin>",
-            lineNumber: 296,
+            lineNumber: 297,
             columnNumber: 9
           })
         ]
@@ -394,11 +395,11 @@ const BingoCardClip = ({ match = {} }) => {
     replayDraws.map(
       (d, idx) => d.audioUrl ? /* @__PURE__ */ jsxDEV(Sequence, { from: d.frame, children: /* @__PURE__ */ jsxDEV(Audio, { src: d.audioUrl }, void 0, false, {
         fileName: "<stdin>",
-        lineNumber: 332,
+        lineNumber: 333,
         columnNumber: 13
       }) }, `${d.number}-${idx}`, false, {
         fileName: "<stdin>",
-        lineNumber: 331,
+        lineNumber: 332,
         columnNumber: 11
       }) : null
     )
