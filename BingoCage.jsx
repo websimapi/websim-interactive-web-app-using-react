@@ -207,104 +207,92 @@ function BingoCage({
     const pProps = propsRef.current;
     const CAGE_RADIUS2 = s.R;
     const BALL_RADIUS2 = 22;
-    const RESTITUTION = 0.6;
-    const CAGE_RESTITUTION = 0.4;
+    const RESTITUTION = 0.8;
+    const CAGE_RESTITUTION = 0.5;
     const FRICTION = 0.92;
-    const GRAVITY = new THREE.Vector3(0, -2500, 0);
+    const GRAVITY = new THREE.Vector3(0, -900, 0);
     const isSpinning = pProps.controlledSpin !== null ? pProps.controlledSpin : s.spinning;
     if (isSpinning) {
-      s.rotationSpeed = Math.min(6, s.rotationSpeed + dt * 4);
+      s.rotationSpeed = Math.min(5, s.rotationSpeed + dt * 3);
     } else {
-      s.rotationSpeed = Math.max(0, s.rotationSpeed - dt * 2);
+      s.rotationSpeed = Math.max(0, s.rotationSpeed - dt * 1.5);
     }
     s.wireGroup.rotation.x += s.rotationSpeed * dt;
-    const activeBalls = s.balls;
+    const balls = s.balls;
     const cagePos = s.cageGroup.position;
     const R_inner = CAGE_RADIUS2 - (BALL_RADIUS2 + 2);
     const R_sq = R_inner * R_inner;
-    for (let i = 0; i < s.spatialGrid.length; i++) s.spatialGrid[i] = null;
-    for (let b of activeBalls) {
+    const angularVel = new THREE.Vector3(s.rotationSpeed, 0, 0);
+    for (const b of balls) {
       if (pProps.drawnNumbers && pProps.drawnNumbers.includes(b.number)) {
         b.drawn = true;
         b.pos.set(0, -99999, 0);
         continue;
       }
       b.vel.addScaledVector(GRAVITY, dt);
+      _v1.subVectors(b.pos, cagePos);
+      const tangential = _v2.copy(angularVel).cross(_v1);
+      b.vel.addScaledVector(tangential, dt * 0.6);
       b.vel.multiplyScalar(0.995);
       b.pos.addScaledVector(b.vel, dt);
       _v1.subVectors(b.pos, cagePos);
-      const dSq = _v1.lengthSq();
-      if (dSq > R_sq) {
-        const d = Math.sqrt(dSq);
-        _n.copy(_v1).multiplyScalar(1 / d);
-        const pen = d - R_inner;
-        b.pos.addScaledVector(_n, -pen);
-        _v2.set(s.rotationSpeed, 0, 0).cross(_v1);
-        _v3.subVectors(b.vel, _v2);
-        const vDotN = _v3.dot(_n);
-        if (vDotN > 0) {
-          _v3.addScaledVector(_n, -(1 + CAGE_RESTITUTION) * vDotN);
-          _v4.copy(_n).multiplyScalar(_v3.dot(_n));
-          _v3.sub(_v4).multiplyScalar(FRICTION).add(_v4);
-          b.vel.addVectors(_v3, _v2);
-          if (s.rotationSpeed > 2) {
-            b.vel.x += (s.rand() - 0.5) * 60;
-            b.vel.y += (s.rand() - 0.5) * 60;
-            b.vel.z += (s.rand() - 0.5) * 60;
-          }
-        }
-      }
-      const gx = Math.floor((b.pos.x - cagePos.x + CAGE_RADIUS2 + 25) / s.gridSize);
-      const gy = Math.floor((b.pos.y - cagePos.y + CAGE_RADIUS2 + 25) / s.gridSize);
-      const gz = Math.floor((b.pos.z - cagePos.z + CAGE_RADIUS2 + 25) / s.gridSize);
-      const hash = gx + gy * s.gridDim + gz * s.gridDim * s.gridDim;
-      if (hash >= 0 && hash < s.spatialGrid.length) {
-        b.next = s.spatialGrid[hash];
-        s.spatialGrid[hash] = b;
-      }
-    }
-    for (let b1 of activeBalls) {
-      if (b1.drawn) continue;
-      const gx = Math.floor((b1.pos.x - cagePos.x + CAGE_RADIUS2 + 25) / s.gridSize);
-      const gy = Math.floor((b1.pos.y - cagePos.y + CAGE_RADIUS2 + 25) / s.gridSize);
-      const gz = Math.floor((b1.pos.z - cagePos.z + CAGE_RADIUS2 + 25) / s.gridSize);
-      for (let x = -1; x <= 1; x++) {
-        for (let y = -1; y <= 1; y++) {
-          for (let z = -1; z <= 1; z++) {
-            const idx = gx + x + (gy + y) * s.gridDim + (gz + z) * s.gridDim * s.gridDim;
-            if (idx >= 0 && idx < s.spatialGrid.length) {
-              let b2 = s.spatialGrid[idx];
-              while (b2) {
-                if (b1 !== b2 && !b2.drawn && b1.number < b2.number) {
-                  _v1.subVectors(b1.pos, b2.pos);
-                  const d2 = _v1.lengthSq();
-                  const rSum = BALL_RADIUS2 * 2;
-                  if (d2 < rSum * rSum && d2 > 1e-3) {
-                    const d = Math.sqrt(d2);
-                    _n.copy(_v1).multiplyScalar(1 / d);
-                    const pen = (rSum - d) * 0.5;
-                    b1.pos.addScaledVector(_n, pen);
-                    b2.pos.addScaledVector(_n, -pen);
-                    const vRel = _v2.subVectors(b1.vel, b2.vel);
-                    const vn = vRel.dot(_n);
-                    if (vn < 0) {
-                      const j = -(1 + RESTITUTION) * vn * 0.5;
-                      _v3.copy(_n).multiplyScalar(j);
-                      b1.vel.add(_v3);
-                      b2.vel.sub(_v3);
-                    }
-                  }
-                }
-                b2 = b2.next;
-              }
+      const distSq = _v1.lengthSq();
+      if (distSq > R_sq) {
+        const dist = Math.sqrt(distSq);
+        if (dist > 1e-4) {
+          _n.copy(_v1).multiplyScalar(1 / dist);
+          const penetration = dist - R_inner;
+          b.pos.addScaledVector(_n, -penetration);
+          const wallVel = _v2.copy(angularVel).cross(_v1);
+          const relVel = _v3.subVectors(b.vel, wallVel);
+          const vDotN = relVel.dot(_n);
+          if (vDotN > 0) {
+            relVel.addScaledVector(_n, -(1 + CAGE_RESTITUTION) * vDotN);
+            _v4.copy(_n).multiplyScalar(relVel.dot(_n));
+            relVel.sub(_v4).multiplyScalar(FRICTION).add(_v4);
+            b.vel.addVectors(relVel, wallVel);
+            if (s.rotationSpeed > 2) {
+              b.vel.x += (s.rand() - 0.5) * 40;
+              b.vel.y += (s.rand() - 0.5) * 40;
+              b.vel.z += (s.rand() - 0.5) * 40;
             }
           }
         }
       }
     }
-    for (let b of activeBalls) {
-      if (!b.drawn && b.vel.lengthSq() < 50 && s.rotationSpeed < 0.1) {
-        b.vel.multiplyScalar(0.8);
+    const nBalls = balls.length;
+    for (let i = 0; i < nBalls; i++) {
+      const bi = balls[i];
+      if (bi.drawn) continue;
+      for (let j = i + 1; j < nBalls; j++) {
+        const bj = balls[j];
+        if (bj.drawn) continue;
+        _v1.subVectors(bi.pos, bj.pos);
+        const d2 = _v1.lengthSq();
+        const rSum = BALL_RADIUS2 * 2;
+        const rSum2 = rSum * rSum;
+        if (d2 < rSum2 && d2 > 1e-4) {
+          const d = Math.sqrt(d2);
+          _n.copy(_v1).multiplyScalar(1 / d);
+          const penetration = rSum - d;
+          const halfPen = penetration * 0.5;
+          bi.pos.addScaledVector(_n, halfPen);
+          bj.pos.addScaledVector(_n, -halfPen);
+          const relVel = _v2.subVectors(bi.vel, bj.vel);
+          const vn = relVel.dot(_n);
+          if (vn < 0) {
+            const jImpulse = -(1 + RESTITUTION) * vn * 0.5;
+            _v3.copy(_n).multiplyScalar(jImpulse);
+            bi.vel.add(_v3);
+            bj.vel.sub(_v3);
+          }
+        }
+      }
+    }
+    for (const b of balls) {
+      if (b.drawn) continue;
+      if (b.vel.lengthSq() < 25 && s.rotationSpeed < 0.1) {
+        b.vel.multiplyScalar(0.4);
       }
     }
   };
@@ -391,7 +379,7 @@ function BingoCage({
     false,
     {
       fileName: "<stdin>",
-      lineNumber: 460,
+      lineNumber: 468,
       columnNumber: 5
     },
     this
