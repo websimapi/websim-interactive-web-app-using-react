@@ -22,22 +22,17 @@ function BingoCage({
   onSpinStart,
   onBallDraw,
   controlledSpin = null,
-  // boolean or null
   spinSchedule = [],
-  // Array of { startFrame, endFrame } for replay
   drawnNumbers = null,
-  // array of numbers that are currently drawn (external control)
   seed = null,
-  // random seed
   currentFrame = void 0
-  // Remotion frame
 }) {
   const mountRef = useRef(null);
   const rafRef = useRef(null);
   const lastSimulatedFrame = useRef(-1);
   const FPS = 30;
   const TIME_STEP = 1 / FPS;
-  const SUB_STEPS = 4;
+  const SUB_STEPS = 5;
   const STEP_DT = TIME_STEP / SUB_STEPS;
   const CAGE_RADIUS = 160;
   const BALL_RADIUS = 22;
@@ -49,16 +44,15 @@ function BingoCage({
     cageGroup: null,
     wireGroup: null,
     balls: [],
-    // { mesh, vel, number, drawn }
     spinning: false,
+    waitingForDraw: false,
+    // flag to trigger draw after spin
     rotationSpeed: 0,
     R: CAGE_RADIUS,
     rand: Math.random,
-    spatialGrid: [],
-    gridSize: BALL_RADIUS * 2 + 2,
     cageY: CAGE_Y,
-    frameIndex: 0
-    // Track simulation frames for sync
+    frameIndex: 0,
+    baseSeed: 0
   });
   const propsRef = useRef({ controlledSpin, drawnNumbers, autoSpin, spinSchedule, onSpinStart, onBallDraw });
   useEffect(() => {
@@ -70,7 +64,6 @@ function BingoCage({
     const finalSeed = seed !== null ? seed : Math.floor(Math.random() * 1e5);
     const prng = mulberry32(finalSeed);
     const scene = new THREE.Scene();
-    scene.background = null;
     const camera = new THREE.PerspectiveCamera(35, width / height, 0.1, 2e3);
     camera.position.set(0, CAGE_Y, 580);
     camera.lookAt(0, CAGE_Y, 0);
@@ -169,14 +162,9 @@ function BingoCage({
       m.add(labelPlane);
       scene.add(m);
       const initialPos = m.position.clone();
-      const initialVel = new THREE.Vector3(
-        (prng() - 0.5) * 10,
-        (prng() - 0.5) * 10,
-        (prng() - 0.5) * 10
-      );
+      const initialVel = new THREE.Vector3((prng() - 0.5) * 2, (prng() - 0.5) * 2, (prng() - 0.5) * 2);
       balls.push({
         mesh: m,
-        // Separate physics state
         pos: initialPos.clone(),
         vel: initialVel.clone(),
         initPos: initialPos.clone(),
@@ -189,9 +177,6 @@ function BingoCage({
         sleeping: false
       });
     }
-    const gridSize = BALL_RADIUS * 2 + 4;
-    const gridDim = Math.ceil((R * 2 + 50) / gridSize);
-    const spatialGrid = new Array(gridDim * gridDim * gridDim).fill(null);
     stateRef.current = {
       scene,
       camera,
@@ -200,16 +185,15 @@ function BingoCage({
       wireGroup,
       balls,
       spinning: propsRef.current.autoSpin,
+      waitingForDraw: false,
       rotationSpeed: 0,
       R,
       acc: 0,
-      // store base seed so we can reset RNG for deterministic re-simulation
       baseSeed: finalSeed,
       rand: prng,
-      spatialGrid,
-      gridDim,
-      gridSize,
-      cageY: CAGE_Y
+      cageY: CAGE_Y,
+      frameIndex: 0
+      // Explicitly start at 0
     };
     return () => {
       cancelAnimationFrame(rafRef.current);
@@ -224,14 +208,25 @@ function BingoCage({
     if (triggerKick) {
       s.balls.forEach((b) => {
         if (!b.drawn) {
-          b.vel.add(new THREE.Vector3((s.rand() - 0.5) * 250, s.rand() * 200 + 50, (s.rand() - 0.5) * 250));
+          b.vel.add(new THREE.Vector3((s.rand() - 0.5) * 300, s.rand() * 250 + 50, (s.rand() - 0.5) * 300));
+          b.sleeping = false;
         }
       });
     }
     if (isSpinningInput) {
-      s.rotationSpeed = Math.min(5, s.rotationSpeed + TIME_STEP * 3);
+      s.rotationSpeed = Math.min(5.5, s.rotationSpeed + TIME_STEP * 4);
     } else {
-      s.rotationSpeed = Math.max(0, s.rotationSpeed - TIME_STEP * 1.5);
+      s.rotationSpeed = Math.max(0, s.rotationSpeed - TIME_STEP * 2);
+    }
+    if (s.waitingForDraw && !s.spinning && s.rotationSpeed < 0.2) {
+      s.waitingForDraw = false;
+      const available = s.balls.filter((b) => !b.drawn);
+      if (available.length > 0) {
+        const pick = available[Math.floor(s.rand() * available.length)];
+        if (pProps.onBallDraw) {
+          pProps.onBallDraw(pick.number, s.frameIndex);
+        }
+      }
     }
     for (let step = 0; step < SUB_STEPS; step++) {
       performSubStep(STEP_DT, s, pProps);
@@ -241,17 +236,15 @@ function BingoCage({
   const performSubStep = (dt, s, pProps) => {
     const CAGE_RADIUS2 = s.R;
     const BALL_RADIUS2 = 22;
-    const RESTITUTION = 0.6;
-    const CAGE_RESTITUTION = 0.3;
-    const FRICTION = 0.94;
-    const GRAVITY = new THREE.Vector3(0, -900, 0);
+    const RESTITUTION = 0.5;
+    const FRICTION = 0.96;
+    const GRAVITY = new THREE.Vector3(0, -980, 0);
     s.wireGroup.rotation.x += s.rotationSpeed * dt;
-    const balls = s.balls;
     const cagePos = s.cageGroup.position;
     const R_inner = CAGE_RADIUS2 - (BALL_RADIUS2 + 2);
     const R_sq = R_inner * R_inner;
     const angularVel = new THREE.Vector3(s.rotationSpeed, 0, 0);
-    for (const b of balls) {
+    for (const b of s.balls) {
       if (pProps.drawnNumbers && pProps.drawnNumbers.includes(b.number)) {
         b.drawn = true;
         b.sleeping = true;
@@ -259,60 +252,56 @@ function BingoCage({
         b.vel.set(0, 0, 0);
         continue;
       }
-      if (b.sleeping && s.rotationSpeed > 0.25) {
-        b.sleeping = false;
-      }
-      if (b.sleeping && s.rotationSpeed < 0.15) {
-        continue;
-      }
+      if (b.sleeping && s.rotationSpeed > 0.5) b.sleeping = false;
+      if (b.sleeping) continue;
       b.vel.addScaledVector(GRAVITY, dt);
-      _v1.subVectors(b.pos, cagePos);
-      const tangential = _v2.copy(angularVel).cross(_v1);
-      b.vel.addScaledVector(tangential, dt * 0.8);
-      b.vel.multiplyScalar(0.998);
+      if (s.rotationSpeed > 0) {
+        _v1.subVectors(b.pos, cagePos);
+        const tangential = _v2.copy(angularVel).cross(_v1);
+        b.vel.addScaledVector(tangential, dt * 1);
+      }
+      b.vel.multiplyScalar(0.999);
       b.pos.addScaledVector(b.vel, dt);
       _v1.subVectors(b.pos, cagePos);
       const distSq = _v1.lengthSq();
       if (distSq > R_sq) {
         const dist = Math.sqrt(distSq);
         _n.copy(_v1).multiplyScalar(1 / dist);
-        const penetration = dist - R_inner;
-        b.pos.addScaledVector(_n, -penetration);
+        b.pos.copy(cagePos).addScaledVector(_n, R_inner);
         const wallVel = _v2.copy(angularVel).cross(_v1);
         const relVel = _v3.subVectors(b.vel, wallVel);
         const vDotN = relVel.dot(_n);
         if (vDotN > 0) {
-          relVel.addScaledVector(_n, -(1 + CAGE_RESTITUTION) * vDotN);
+          relVel.addScaledVector(_n, -(1 + 0.4) * vDotN);
           _v4.copy(_n).multiplyScalar(relVel.dot(_n));
-          relVel.sub(_v4).multiplyScalar(FRICTION).add(_v4);
+          const tangentV = relVel.clone().sub(_v4);
+          tangentV.multiplyScalar(FRICTION);
+          relVel.copy(tangentV).add(_v4);
           b.vel.addVectors(relVel, wallVel);
-          if (s.rotationSpeed > 2) {
-            b.vel.x += (s.rand() - 0.5) * 60;
-            b.vel.y += (s.rand() - 0.5) * 60;
-            b.vel.z += (s.rand() - 0.5) * 60;
+          if (s.rotationSpeed > 1) {
+            b.vel.add(new THREE.Vector3((s.rand() - 0.5) * 50, (s.rand() - 0.5) * 50, (s.rand() - 0.5) * 50));
           }
         }
       }
     }
-    const nBalls = balls.length;
-    for (let iter = 0; iter < 2; iter++) {
+    const nBalls = s.balls.length;
+    for (let iter = 0; iter < 3; iter++) {
       for (let i = 0; i < nBalls; i++) {
-        const bi = balls[i];
+        const bi = s.balls[i];
         if (bi.drawn || bi.sleeping) continue;
         for (let j = i + 1; j < nBalls; j++) {
-          const bj = balls[j];
+          const bj = s.balls[j];
           if (bj.drawn || bj.sleeping) continue;
           _v1.subVectors(bi.pos, bj.pos);
           const d2 = _v1.lengthSq();
           const rSum = BALL_RADIUS2 * 2;
-          const rSum2 = rSum * rSum;
-          if (d2 < rSum2 && d2 > 1e-4) {
+          if (d2 < rSum * rSum && d2 > 1e-4) {
             const d = Math.sqrt(d2);
             _n.copy(_v1).multiplyScalar(1 / d);
-            const penetration = rSum - d;
-            const halfPen = penetration * 0.5;
-            bi.pos.addScaledVector(_n, halfPen);
-            bj.pos.addScaledVector(_n, -halfPen);
+            const overlap = rSum - d;
+            const shift = _n.clone().multiplyScalar(overlap * 0.5);
+            bi.pos.add(shift);
+            bj.pos.sub(shift);
             const relVel = _v2.subVectors(bi.vel, bj.vel);
             const vn = relVel.dot(_n);
             if (vn < 0) {
@@ -325,22 +314,17 @@ function BingoCage({
         }
       }
     }
-    for (const b of balls) {
-      if (b.drawn || b.sleeping) continue;
-      _v1.subVectors(b.pos, cagePos);
-      const distSq = _v1.lengthSq();
-      if (distSq > R_sq) {
-        const dist = Math.sqrt(distSq);
-        _n.copy(_v1).multiplyScalar(1 / dist);
-        b.pos.addScaledVector(_n, -(dist - R_inner));
-        b.vel.multiplyScalar(0.9);
-      }
-    }
-    for (const b of balls) {
-      if (b.drawn) continue;
-      if (s.rotationSpeed < 0.1 && b.vel.lengthSq() < 15) {
-        b.vel.set(0, 0, 0);
-        b.sleeping = true;
+    if (s.rotationSpeed < 0.1) {
+      for (const b of s.balls) {
+        if (b.drawn) continue;
+        const speedSq = b.vel.lengthSq();
+        if (speedSq < 20) {
+          b.vel.multiplyScalar(0.8);
+        }
+        if (speedSq < 2) {
+          b.vel.set(0, 0, 0);
+          b.sleeping = true;
+        }
       }
     }
   };
@@ -356,36 +340,31 @@ function BingoCage({
   useEffect(() => {
     if (!stateRef.current) return;
     if (currentFrame !== void 0) {
-      const targetFrame = currentFrame;
+      const targetFrame = Math.max(0, Math.floor(currentFrame));
       const s = stateRef.current;
-      if (!s) return;
       const pProps = propsRef.current;
-      const canContinue = targetFrame === lastSimulatedFrame.current + 1;
-      if (!canContinue) {
+      if (targetFrame < lastSimulatedFrame.current || targetFrame > lastSimulatedFrame.current + 300) {
         s.spinning = false;
         s.rotationSpeed = 0;
         s.wireGroup.rotation.set(0, 0, 0);
-        s.acc = 0;
         s.frameIndex = 0;
-        if (typeof s.baseSeed === "number") {
-          s.rand = mulberry32(s.baseSeed);
-        }
+        s.rand = mulberry32(s.baseSeed);
         for (const b of s.balls) {
           b.drawn = false;
           b.sleeping = false;
-          if (b.initPos) b.pos.copy(b.initPos);
-          if (b.initVel) b.vel.copy(b.initVel);
+          b.pos.copy(b.initPos);
+          b.vel.copy(b.initVel);
         }
         lastSimulatedFrame.current = 0;
       }
-      const startSim = lastSimulatedFrame.current;
-      const stepsToRun = targetFrame - startSim;
+      let steps = targetFrame - lastSimulatedFrame.current;
+      if (steps > 500) steps = 500;
       const schedule = pProps.spinSchedule || [];
-      for (let i = 0; i < stepsToRun; i++) {
-        const currentSimStep = startSim + i;
-        const activeWindow = schedule.find((w) => currentSimStep >= w.startFrame && currentSimStep < w.endFrame);
+      for (let i = 0; i < steps; i++) {
+        const simFrame = lastSimulatedFrame.current + i;
+        const activeWindow = schedule.find((w) => simFrame >= w.startFrame && simFrame < w.endFrame);
         const isSpinning = !!activeWindow;
-        const triggerKick = activeWindow && currentSimStep === activeWindow.startFrame;
+        const triggerKick = activeWindow && simFrame === activeWindow.startFrame;
         runPhysicsFrame(isSpinning, triggerKick);
       }
       lastSimulatedFrame.current = targetFrame;
@@ -417,31 +396,22 @@ function BingoCage({
     const s = stateRef.current;
     const p = propsRef.current;
     if (!s || p.controlledSpin !== null) return;
+    if (s.spinning) return;
     const currentSimFrame = s.frameIndex;
-    if (p.onSpinStart) p.onSpinStart(currentSimFrame);
+    if (p.onSpinStart) {
+      p.onSpinStart(Math.floor(currentSimFrame));
+    }
     s.spinning = true;
+    s.waitingForDraw = true;
     s.balls.forEach((b) => {
       if (!b.drawn) {
         b.vel.add(new THREE.Vector3((s.rand() - 0.5) * 250, s.rand() * 200 + 50, (s.rand() - 0.5) * 250));
+        b.sleeping = false;
       }
     });
     setTimeout(() => {
       if (stateRef.current) stateRef.current.spinning = false;
     }, 2e3);
-    const ii = setInterval(() => {
-      if (!stateRef.current) {
-        clearInterval(ii);
-        return;
-      }
-      if (stateRef.current.rotationSpeed < 0.1 && !stateRef.current.spinning) {
-        clearInterval(ii);
-        const available = stateRef.current.balls.filter((b) => !b.drawn);
-        if (available.length > 0) {
-          const pick = available[Math.floor(stateRef.current.rand() * available.length)];
-          if (p.onBallDraw) p.onBallDraw(pick.number, stateRef.current.frameIndex);
-        }
-      }
-    }, 100);
   };
   return /* @__PURE__ */ jsxDEV(
     "div",
@@ -454,7 +424,7 @@ function BingoCage({
     false,
     {
       fileName: "<stdin>",
-      lineNumber: 586,
+      lineNumber: 523,
       columnNumber: 5
     },
     this
