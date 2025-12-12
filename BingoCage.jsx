@@ -1,19 +1,9 @@
 import { jsxDEV } from "react/jsx-dev-runtime";
 import React, { useRef, useEffect } from "react";
 import * as THREE from "three";
-function mulberry32(a) {
-  return function() {
-    var t = a += 1831565813;
-    t = Math.imul(t ^ t >>> 15, t | 1);
-    t ^= t + Math.imul(t ^ t >>> 7, t | 61);
-    return ((t ^ t >>> 14) >>> 0) / 4294967296;
-  };
-}
-const _v1 = new THREE.Vector3();
-const _v2 = new THREE.Vector3();
-const _v3 = new THREE.Vector3();
-const _v4 = new THREE.Vector3();
-const _n = new THREE.Vector3();
+import { mulberry32 } from "./utils.js";
+import { runPhysicsFrame, TIME_STEP } from "./BingoPhysics.js";
+import { initBingoScene, updateMeshes } from "./BingoScene.js";
 function BingoCage({
   width = 560,
   height = 420,
@@ -32,13 +22,6 @@ function BingoCage({
   const mountRef = useRef(null);
   const rafRef = useRef(null);
   const lastSimulatedFrame = useRef(-1);
-  const FPS = 30;
-  const TIME_STEP = 1 / FPS;
-  const SUB_STEPS = 15;
-  const STEP_DT = TIME_STEP / SUB_STEPS;
-  const CAGE_RADIUS = 160;
-  const BALL_RADIUS = 19;
-  const CAGE_Y = 100;
   const stateRef = useRef({
     scene: null,
     camera: null,
@@ -50,9 +33,9 @@ function BingoCage({
     waitingForDraw: false,
     // flag to trigger draw after spin
     rotationSpeed: 0,
-    R: CAGE_RADIUS,
+    R: 160,
     rand: Math.random,
-    cageY: CAGE_Y,
+    cageY: 100,
     frameIndex: 0,
     baseSeed: 0
   });
@@ -63,294 +46,28 @@ function BingoCage({
   useEffect(() => {
     const mount = mountRef.current;
     if (!mount) return;
-    const finalSeed = seed !== null ? seed : Math.floor(Math.random() * 1e5);
-    const prng = mulberry32(finalSeed);
-    const scene = new THREE.Scene();
-    const camera = new THREE.PerspectiveCamera(35, width / height, 0.1, 2e3);
-    camera.position.set(0, CAGE_Y, 580);
-    camera.lookAt(0, CAGE_Y, 0);
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: "high-performance" });
-    renderer.setSize(width, height);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    mount.appendChild(renderer.domElement);
-    const dir = new THREE.DirectionalLight(16777215, 1.2);
-    dir.position.set(100, 300, 200);
-    scene.add(dir);
-    scene.add(new THREE.AmbientLight(16777215, 0.7));
-    const cageGroup = new THREE.Group();
-    cageGroup.position.y = CAGE_Y;
-    scene.add(cageGroup);
-    const wireGroup = new THREE.Group();
-    cageGroup.add(wireGroup);
-    const R = CAGE_RADIUS;
-    const metalMat = new THREE.MeshStandardMaterial({
-      color: 13421772,
-      metalness: 0.8,
-      roughness: 0.2,
-      side: THREE.DoubleSide
+    const sceneState = initBingoScene({
+      mount,
+      width,
+      height,
+      seed
     });
-    const numHoops = 24;
-    const hoopGeo = new THREE.TorusGeometry(R, 1.5, 5, 32);
-    for (let i = 0; i < numHoops; i++) {
-      const hoop = new THREE.Mesh(hoopGeo, metalMat);
-      hoop.rotation.x = Math.PI * i / numHoops;
-      wireGroup.add(hoop);
-    }
-    const numParallels = 12;
-    for (let i = 1; i < numParallels; i++) {
-      const theta = -Math.PI / 2 + Math.PI * i / numParallels;
-      const rRing = R * Math.cos(theta);
-      const xRing = R * Math.sin(theta);
-      if (rRing > 10) {
-        const ring = new THREE.Mesh(new THREE.TorusGeometry(rRing, 1.5, 5, 48), metalMat);
-        ring.rotation.y = Math.PI / 2;
-        ring.position.x = xRing;
-        wireGroup.add(ring);
-      }
-    }
-    const hubGeo = new THREE.CylinderGeometry(10, 10, 12, 16);
-    const hubLeft = new THREE.Mesh(hubGeo, metalMat);
-    hubLeft.rotation.z = Math.PI / 2;
-    hubLeft.position.x = -R - 5;
-    wireGroup.add(hubLeft);
-    const hubRight = new THREE.Mesh(hubGeo, metalMat);
-    hubRight.rotation.z = Math.PI / 2;
-    hubRight.position.x = R + 5;
-    wireGroup.add(hubRight);
-    const hatchMesh = new THREE.Mesh(new THREE.BoxGeometry(90, 5, 50), new THREE.MeshStandardMaterial({ color: 13421772, metalness: 0.8, roughness: 0.3 }));
-    hatchMesh.position.set(0, -R - 8, 0);
-    cageGroup.add(hatchMesh);
-    const balls = [];
-    const ballGeom = new THREE.IcosahedronGeometry(BALL_RADIUS, 1);
-    const ballBaseMat = new THREE.MeshStandardMaterial({ color: 16777215, metalness: 0, roughness: 0.4 });
-    const groupColors = [16756141, 11392767, 16774573, 12124077, 14724607];
-    const BALL_COUNT = 75;
-    for (let i = 0; i < BALL_COUNT; i++) {
-      const number = i + 1;
-      const group = Math.floor((number - 1) / 15);
-      const mat = ballBaseMat.clone();
-      mat.color.setHex(groupColors[group % 5]);
-      const m = new THREE.Mesh(ballGeom, mat);
-      const radiusLimit = R - (BALL_RADIUS + 10);
-      const theta = prng() * Math.PI * 2;
-      const phi = Math.acos(2 * prng() - 1);
-      const r = Math.pow(prng(), 1 / 3) * radiusLimit;
-      const startPos = new THREE.Vector3(
-        r * Math.sin(phi) * Math.cos(theta),
-        r * Math.sin(phi) * Math.sin(theta),
-        r * Math.cos(phi)
-      );
-      m.position.copy(startPos).add(new THREE.Vector3(0, CAGE_Y, 0));
-      const label = number.toString();
-      const canvas = document.createElement("canvas");
-      canvas.width = 64;
-      canvas.height = 64;
-      const ctx = canvas.getContext("2d");
-      ctx.fillStyle = "#ffffff";
-      ctx.beginPath();
-      ctx.arc(32, 32, 30, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.strokeStyle = "#" + new THREE.Color(groupColors[group % 5]).getHexString();
-      ctx.lineWidth = 4;
-      ctx.stroke();
-      ctx.fillStyle = "#111";
-      ctx.font = "bold 34px Arial";
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      ctx.fillText(label, 32, 34);
-      const tex = new THREE.CanvasTexture(canvas);
-      const labelPlane = new THREE.Mesh(new THREE.PlaneGeometry(BALL_RADIUS * 1.6, BALL_RADIUS * 1.6), new THREE.MeshBasicMaterial({ map: tex, transparent: true }));
-      labelPlane.position.set(0, 0, BALL_RADIUS + 0.1);
-      m.add(labelPlane);
-      scene.add(m);
-      const initialPos = m.position.clone();
-      const initialVel = new THREE.Vector3((prng() - 0.5) * 5, (prng() - 0.5) * 5, (prng() - 0.5) * 5);
-      balls.push({
-        mesh: m,
-        pos: initialPos.clone(),
-        vel: initialVel.clone(),
-        initPos: initialPos.clone(),
-        initVel: initialVel.clone(),
-        mass: 1,
-        radius: BALL_RADIUS,
-        labelPlane,
-        number,
-        drawn: false,
-        sleeping: false
-      });
-    }
     stateRef.current = {
-      scene,
-      camera,
-      renderer,
-      cageGroup,
-      wireGroup,
-      balls,
+      ...stateRef.current,
+      ...sceneState,
       spinning: propsRef.current.autoSpin,
       waitingForDraw: false,
       rotationSpeed: 0,
-      R,
       acc: 0,
-      baseSeed: finalSeed,
-      rand: prng,
-      cageY: CAGE_Y,
       frameIndex: 0
-      // Explicitly start at 0
     };
     return () => {
       cancelAnimationFrame(rafRef.current);
-      if (mount) mount.removeChild(renderer.domElement);
-      renderer.dispose();
+      sceneState.cleanUp();
     };
   }, [width, height, seed]);
-  const runPhysicsFrame = (isSpinningInput, triggerKick) => {
-    const s = stateRef.current;
-    if (!s) return;
-    const pProps = propsRef.current;
-    if (triggerKick) {
-      s.balls.forEach((b) => {
-        if (!b.drawn) {
-          b.vel.add(new THREE.Vector3((s.rand() - 0.5) * 300, s.rand() * 250 + 50, (s.rand() - 0.5) * 300));
-          b.sleeping = false;
-        }
-      });
-    }
-    if (isSpinningInput) {
-      s.rotationSpeed = Math.min(5.5, s.rotationSpeed + TIME_STEP * 4);
-    } else {
-      s.rotationSpeed = Math.max(0, s.rotationSpeed - TIME_STEP * 2);
-    }
-    if (s.waitingForDraw && !s.spinning && s.rotationSpeed < 0.2) {
-      s.waitingForDraw = false;
-      const available = s.balls.filter((b) => !b.drawn);
-      if (available.length > 0) {
-        const pick = available[Math.floor(s.rand() * available.length)];
-        if (pProps.onBallDraw) {
-          pProps.onBallDraw(pick.number, s.frameIndex);
-        }
-      }
-    }
-    for (let step = 0; step < SUB_STEPS; step++) {
-      performSubStep(STEP_DT, s, pProps);
-    }
-    s.frameIndex++;
-  };
-  const performSubStep = (dt, s, pProps) => {
-    const CAGE_RADIUS2 = s.R;
-    const BALL_RADIUS2 = 19;
-    const RESTITUTION = 0.5;
-    const FRICTION = 0.96;
-    const GRAVITY = new THREE.Vector3(0, -980, 0);
-    s.wireGroup.rotation.x += s.rotationSpeed * dt;
-    const cagePos = s.cageGroup.position;
-    const R_inner = CAGE_RADIUS2 - (BALL_RADIUS2 + 4);
-    const R_sq = R_inner * R_inner;
-    const angularVel = new THREE.Vector3(s.rotationSpeed, 0, 0);
-    for (const b of s.balls) {
-      if (pProps.drawnNumbers && pProps.drawnNumbers.includes(b.number)) {
-        b.drawn = true;
-        b.sleeping = true;
-        b.pos.set(0, -99999, 0);
-        b.vel.set(0, 0, 0);
-        continue;
-      }
-      if (b.sleeping && (s.rotationSpeed > 0.5 || s.frameIndex <= 100)) b.sleeping = false;
-      if (b.sleeping) continue;
-      b.vel.addScaledVector(GRAVITY, dt);
-      if (s.rotationSpeed > 0) {
-        _v1.subVectors(b.pos, cagePos);
-        const tangential = _v2.copy(angularVel).cross(_v1);
-        b.vel.addScaledVector(tangential, dt * 1);
-      }
-      b.vel.multiplyScalar(0.999);
-      b.pos.addScaledVector(b.vel, dt);
-      _v1.subVectors(b.pos, cagePos);
-      const distSq = _v1.lengthSq();
-      if (distSq > R_sq) {
-        const dist = Math.sqrt(distSq);
-        _n.copy(_v1).multiplyScalar(1 / dist);
-        b.pos.copy(cagePos).addScaledVector(_n, R_inner);
-        const wallVel = _v2.copy(angularVel).cross(_v1);
-        const relVel = _v3.subVectors(b.vel, wallVel);
-        const vDotN = relVel.dot(_n);
-        if (vDotN > 0) {
-          relVel.addScaledVector(_n, -(1 + 0.4) * vDotN);
-          _v4.copy(_n).multiplyScalar(relVel.dot(_n));
-          const tangentV = relVel.clone().sub(_v4);
-          tangentV.multiplyScalar(FRICTION);
-          relVel.copy(tangentV).add(_v4);
-          b.vel.addVectors(relVel, wallVel);
-          if (s.rotationSpeed > 1) {
-            b.vel.add(new THREE.Vector3((s.rand() - 0.5) * 50, (s.rand() - 0.5) * 50, (s.rand() - 0.5) * 50));
-          }
-        }
-      }
-    }
-    const nBalls = s.balls.length;
-    for (let iter = 0; iter < 8; iter++) {
-      for (let i = 0; i < nBalls; i++) {
-        const bi = s.balls[i];
-        if (bi.drawn || bi.sleeping) continue;
-        for (let j = i + 1; j < nBalls; j++) {
-          const bj = s.balls[j];
-          if (bj.drawn || bj.sleeping) continue;
-          _v1.subVectors(bi.pos, bj.pos);
-          const d2 = _v1.lengthSq();
-          const rSum = BALL_RADIUS2 * 2;
-          if (d2 < rSum * rSum && d2 > 1e-4) {
-            const d = Math.sqrt(d2);
-            _n.copy(_v1).multiplyScalar(1 / d);
-            const overlap = rSum - d;
-            const shift = _n.clone().multiplyScalar(overlap * 0.5);
-            bi.pos.add(shift);
-            bj.pos.sub(shift);
-            const relVel = _v2.subVectors(bi.vel, bj.vel);
-            const vn = relVel.dot(_n);
-            if (vn < 0) {
-              const jImpulse = -(1 + RESTITUTION) * vn * 0.5;
-              _v3.copy(_n).multiplyScalar(jImpulse);
-              bi.vel.add(_v3);
-              bj.vel.sub(_v3);
-            }
-          }
-        }
-      }
-    }
-    for (const b of s.balls) {
-      if (b.drawn || b.sleeping) continue;
-      _v1.subVectors(b.pos, cagePos);
-      const dSq = _v1.lengthSq();
-      if (dSq > R_sq) {
-        const d = Math.sqrt(dSq);
-        _v1.multiplyScalar((R_inner - 0.5) / d);
-        b.pos.copy(cagePos).add(_v1);
-      }
-    }
-    if (s.rotationSpeed < 0.05 && s.frameIndex > 100) {
-      for (const b of s.balls) {
-        if (b.drawn) continue;
-        const speedSq = b.vel.lengthSq();
-        if (speedSq < 50) {
-          b.vel.multiplyScalar(0.5);
-        }
-        if (speedSq < 5) {
-          b.vel.set(0, 0, 0);
-          b.sleeping = true;
-        }
-      }
-    }
-  };
-  const syncMeshes = () => {
-    const s = stateRef.current;
-    if (!s) return;
-    for (let b of s.balls) {
-      b.mesh.position.copy(b.pos);
-      b.mesh.visible = !b.drawn;
-      if (!b.drawn) b.labelPlane.lookAt(s.camera.position);
-    }
-  };
   useEffect(() => {
-    if (!stateRef.current) return;
+    if (!stateRef.current || !stateRef.current.scene) return;
     if (currentFrame !== void 0) {
       const targetFrame = Math.max(0, Math.floor(currentFrame));
       const s = stateRef.current;
@@ -371,7 +88,7 @@ function BingoCage({
             }
             b.drawn = b.pos.y < -500;
           }
-          syncMeshes();
+          updateMeshes(s);
           s.renderer.render(s.scene, s.camera);
           return;
         }
@@ -398,23 +115,23 @@ function BingoCage({
         const activeWindow = schedule.find((w) => simFrame >= w.startFrame && simFrame < w.endFrame);
         const isSpinning = !!activeWindow;
         const triggerKick = activeWindow && simFrame === activeWindow.startFrame;
-        runPhysicsFrame(isSpinning, triggerKick);
+        runPhysicsFrame(s, pProps, isSpinning, triggerKick);
       }
       lastSimulatedFrame.current = targetFrame;
-      syncMeshes();
+      updateMeshes(s);
       s.renderer.render(s.scene, s.camera);
     } else {
       let lastTime = performance.now();
       const animate = () => {
         const s = stateRef.current;
-        if (!s) return;
+        if (!s || !s.scene) return;
         const now = performance.now();
         let dt = Math.min(0.1, (now - lastTime) / 1e3);
         lastTime = now;
         s.acc += dt;
         while (s.acc >= TIME_STEP) {
           const isSpinning = s.spinning;
-          runPhysicsFrame(isSpinning, false);
+          runPhysicsFrame(s, propsRef.current, isSpinning, false);
           s.acc -= TIME_STEP;
         }
         if (propsRef.current.onFrameUpdate) {
@@ -429,7 +146,7 @@ function BingoCage({
           }
           propsRef.current.onFrameUpdate(s.frameIndex, data);
         }
-        syncMeshes();
+        updateMeshes(s);
         s.renderer.render(s.scene, s.camera);
         rafRef.current = requestAnimationFrame(animate);
       };
@@ -469,7 +186,7 @@ function BingoCage({
     false,
     {
       fileName: "<stdin>",
-      lineNumber: 582,
+      lineNumber: 235,
       columnNumber: 5
     },
     this
