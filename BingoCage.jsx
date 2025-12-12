@@ -56,12 +56,14 @@ function BingoCage({
     rand: Math.random,
     spatialGrid: [],
     gridSize: BALL_RADIUS * 2 + 2,
-    cageY: CAGE_Y
+    cageY: CAGE_Y,
+    frameIndex: 0
+    // Track simulation frames for sync
   });
-  const propsRef = useRef({ controlledSpin, drawnNumbers, autoSpin, spinSchedule });
+  const propsRef = useRef({ controlledSpin, drawnNumbers, autoSpin, spinSchedule, onSpinStart, onBallDraw });
   useEffect(() => {
-    propsRef.current = { controlledSpin, drawnNumbers, autoSpin, spinSchedule };
-  }, [controlledSpin, drawnNumbers, autoSpin, spinSchedule]);
+    propsRef.current = { controlledSpin, drawnNumbers, autoSpin, spinSchedule, onSpinStart, onBallDraw };
+  }, [controlledSpin, drawnNumbers, autoSpin, spinSchedule, onSpinStart, onBallDraw]);
   useEffect(() => {
     const mount = mountRef.current;
     if (!mount) return;
@@ -222,7 +224,7 @@ function BingoCage({
     if (triggerKick) {
       s.balls.forEach((b) => {
         if (!b.drawn) {
-          b.vel.add(new THREE.Vector3((s.rand() - 0.5) * 200, s.rand() * 200, (s.rand() - 0.5) * 200));
+          b.vel.add(new THREE.Vector3((s.rand() - 0.5) * 250, s.rand() * 200 + 50, (s.rand() - 0.5) * 250));
         }
       });
     }
@@ -234,6 +236,7 @@ function BingoCage({
     for (let step = 0; step < SUB_STEPS; step++) {
       performSubStep(STEP_DT, s, pProps);
     }
+    s.frameIndex++;
   };
   const performSubStep = (dt, s, pProps) => {
     const CAGE_RADIUS2 = s.R;
@@ -357,27 +360,32 @@ function BingoCage({
       const s = stateRef.current;
       if (!s) return;
       const pProps = propsRef.current;
-      s.spinning = false;
-      s.rotationSpeed = 0;
-      s.wireGroup.rotation.set(0, 0, 0);
-      s.acc = 0;
-      if (typeof s.baseSeed === "number") {
-        s.rand = mulberry32(s.baseSeed);
+      const canContinue = targetFrame === lastSimulatedFrame.current + 1;
+      if (!canContinue) {
+        s.spinning = false;
+        s.rotationSpeed = 0;
+        s.wireGroup.rotation.set(0, 0, 0);
+        s.acc = 0;
+        s.frameIndex = 0;
+        if (typeof s.baseSeed === "number") {
+          s.rand = mulberry32(s.baseSeed);
+        }
+        for (const b of s.balls) {
+          b.drawn = false;
+          b.sleeping = false;
+          if (b.initPos) b.pos.copy(b.initPos);
+          if (b.initVel) b.vel.copy(b.initVel);
+        }
+        lastSimulatedFrame.current = 0;
       }
-      for (const b of s.balls) {
-        b.drawn = false;
-        b.sleeping = false;
-        if (b.initPos) b.pos.copy(b.initPos);
-        if (b.initVel) b.vel.copy(b.initVel);
-      }
-      const steps = targetFrame;
+      const startSim = lastSimulatedFrame.current;
+      const stepsToRun = targetFrame - startSim;
       const schedule = pProps.spinSchedule || [];
-      for (let i = 0; i <= steps; i++) {
-        if (i === steps && steps > 0) break;
-        if (i >= steps) break;
-        const activeWindow = schedule.find((w) => i >= w.startFrame && i <= w.endFrame);
+      for (let i = 0; i < stepsToRun; i++) {
+        const currentSimStep = startSim + i;
+        const activeWindow = schedule.find((w) => currentSimStep >= w.startFrame && currentSimStep < w.endFrame);
         const isSpinning = !!activeWindow;
-        const triggerKick = activeWindow && i === activeWindow.startFrame;
+        const triggerKick = activeWindow && currentSimStep === activeWindow.startFrame;
         runPhysicsFrame(isSpinning, triggerKick);
       }
       lastSimulatedFrame.current = targetFrame;
@@ -407,12 +415,14 @@ function BingoCage({
   }, [currentFrame]);
   const handleTap = () => {
     const s = stateRef.current;
-    if (!s || propsRef.current.controlledSpin !== null) return;
-    if (onSpinStart) onSpinStart();
+    const p = propsRef.current;
+    if (!s || p.controlledSpin !== null) return;
+    const currentSimFrame = s.frameIndex;
+    if (p.onSpinStart) p.onSpinStart(currentSimFrame);
     s.spinning = true;
     s.balls.forEach((b) => {
       if (!b.drawn) {
-        b.vel.add(new THREE.Vector3((s.rand() - 0.5) * 200, s.rand() * 200, (s.rand() - 0.5) * 200));
+        b.vel.add(new THREE.Vector3((s.rand() - 0.5) * 250, s.rand() * 200 + 50, (s.rand() - 0.5) * 250));
       }
     });
     setTimeout(() => {
@@ -428,7 +438,7 @@ function BingoCage({
         const available = stateRef.current.balls.filter((b) => !b.drawn);
         if (available.length > 0) {
           const pick = available[Math.floor(stateRef.current.rand() * available.length)];
-          if (onBallDraw) onBallDraw(pick.number);
+          if (p.onBallDraw) p.onBallDraw(pick.number, stateRef.current.frameIndex);
         }
       }
     }, 100);
@@ -444,7 +454,7 @@ function BingoCage({
     false,
     {
       fileName: "<stdin>",
-      lineNumber: 574,
+      lineNumber: 586,
       columnNumber: 5
     },
     this
