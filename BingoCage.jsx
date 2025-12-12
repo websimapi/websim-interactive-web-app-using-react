@@ -21,6 +21,8 @@ function BingoCage({
   autoSpin = false,
   onSpinStart,
   onBallDraw,
+  onFrameUpdate,
+  replayData,
   controlledSpin = null,
   spinSchedule = [],
   drawnNumbers = null,
@@ -32,7 +34,7 @@ function BingoCage({
   const lastSimulatedFrame = useRef(-1);
   const FPS = 30;
   const TIME_STEP = 1 / FPS;
-  const SUB_STEPS = 5;
+  const SUB_STEPS = 6;
   const STEP_DT = TIME_STEP / SUB_STEPS;
   const CAGE_RADIUS = 160;
   const BALL_RADIUS = 22;
@@ -54,10 +56,10 @@ function BingoCage({
     frameIndex: 0,
     baseSeed: 0
   });
-  const propsRef = useRef({ controlledSpin, drawnNumbers, autoSpin, spinSchedule, onSpinStart, onBallDraw });
+  const propsRef = useRef({ controlledSpin, drawnNumbers, autoSpin, spinSchedule, onSpinStart, onBallDraw, onFrameUpdate, replayData });
   useEffect(() => {
-    propsRef.current = { controlledSpin, drawnNumbers, autoSpin, spinSchedule, onSpinStart, onBallDraw };
-  }, [controlledSpin, drawnNumbers, autoSpin, spinSchedule, onSpinStart, onBallDraw]);
+    propsRef.current = { controlledSpin, drawnNumbers, autoSpin, spinSchedule, onSpinStart, onBallDraw, onFrameUpdate, replayData };
+  }, [controlledSpin, drawnNumbers, autoSpin, spinSchedule, onSpinStart, onBallDraw, onFrameUpdate, replayData]);
   useEffect(() => {
     const mount = mountRef.current;
     if (!mount) return;
@@ -314,14 +316,14 @@ function BingoCage({
         }
       }
     }
-    if (s.rotationSpeed < 0.1) {
+    if (s.rotationSpeed < 0.05) {
       for (const b of s.balls) {
         if (b.drawn) continue;
         const speedSq = b.vel.lengthSq();
-        if (speedSq < 20) {
-          b.vel.multiplyScalar(0.8);
+        if (speedSq < 50) {
+          b.vel.multiplyScalar(0.5);
         }
-        if (speedSq < 2) {
+        if (speedSq < 5) {
           b.vel.set(0, 0, 0);
           b.sleeping = true;
         }
@@ -343,6 +345,27 @@ function BingoCage({
       const targetFrame = Math.max(0, Math.floor(currentFrame));
       const s = stateRef.current;
       const pProps = propsRef.current;
+      if (pProps.replayData) {
+        const rd = pProps.replayData;
+        const frameData = rd[targetFrame];
+        const data = frameData || rd[targetFrame - 1] || rd[targetFrame + 1];
+        if (data) {
+          s.wireGroup.rotation.x = data[0];
+          s.cageGroup.position.y = s.cageY;
+          let idx = 1;
+          for (let i = 0; i < s.balls.length; i++) {
+            const b = s.balls[i];
+            if (idx + 2 < data.length) {
+              b.pos.set(data[idx], data[idx + 1], data[idx + 2]);
+              idx += 3;
+            }
+            b.drawn = b.pos.y < -500;
+          }
+          syncMeshes();
+          s.renderer.render(s.scene, s.camera);
+          return;
+        }
+      }
       if (targetFrame < lastSimulatedFrame.current || targetFrame > lastSimulatedFrame.current + 300) {
         s.spinning = false;
         s.rotationSpeed = 0;
@@ -384,6 +407,18 @@ function BingoCage({
           runPhysicsFrame(isSpinning, false);
           s.acc -= TIME_STEP;
         }
+        if (propsRef.current.onFrameUpdate) {
+          const data = [parseFloat(s.wireGroup.rotation.x.toFixed(3))];
+          for (let i = 0; i < s.balls.length; i++) {
+            const b = s.balls[i];
+            data.push(
+              parseFloat(b.pos.x.toFixed(2)),
+              parseFloat(b.pos.y.toFixed(2)),
+              parseFloat(b.pos.z.toFixed(2))
+            );
+          }
+          propsRef.current.onFrameUpdate(s.frameIndex, data);
+        }
         syncMeshes();
         s.renderer.render(s.scene, s.camera);
         rafRef.current = requestAnimationFrame(animate);
@@ -424,7 +459,7 @@ function BingoCage({
     false,
     {
       fileName: "<stdin>",
-      lineNumber: 523,
+      lineNumber: 570,
       columnNumber: 5
     },
     this

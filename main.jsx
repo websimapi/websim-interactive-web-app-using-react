@@ -54,11 +54,16 @@ function InteractiveApp() {
   const [isReplayMode, setIsReplayMode] = useState(false);
   const [gameSeed] = useState(() => Math.floor(Math.random() * 1e6));
   const [sessionStartTime] = useState(Date.now());
+  const physicsRecording = useRef({});
   const getSafeFrame = (frame) => {
     if (typeof frame === "number" && Number.isFinite(frame)) {
       return Math.floor(frame);
     }
-    return Math.round((Date.now() - sessionStartTime) / 1e3 * 30);
+    const fb = Math.round((Date.now() - sessionStartTime) / 1e3 * 30);
+    return Number.isFinite(fb) ? fb : 0;
+  };
+  const handleFrameUpdate = (frame, data) => {
+    physicsRecording.current[frame] = data;
   };
   const handleCellTap = (r, c) => {
     const frame = getSafeFrame(null);
@@ -97,6 +102,7 @@ function InteractiveApp() {
   };
   const clearActions = () => {
     setActions([]);
+    physicsRecording.current = {};
     setIsReplayMode(false);
     setPlayerKey((k) => k + 1);
   };
@@ -135,8 +141,9 @@ function InteractiveApp() {
       replaySpinWindows: spinWindows,
       replayDraws: drawWithFrame,
       durationInFrames,
-      seed: gameSeed
-      // CRITICAL: Pass the exact seed used in interactive mode
+      seed: gameSeed,
+      replayData: physicsRecording.current
+      // Pass the full physics recording
     };
   }, [isReplayMode, actions, gameSeed]);
   return /* @__PURE__ */ jsxDEV("div", { style: { display: "flex", height: "100%", gap: 12, alignItems: "center", padding: 12, boxSizing: "border-box", justifyContent: "center" }, children: [
@@ -182,13 +189,14 @@ function InteractiveApp() {
                 height: 520,
                 onSpinStart: handleSpinStart,
                 onBallDraw: handleBallDraw,
+                onFrameUpdate: handleFrameUpdate,
                 seed: gameSeed
               },
               void 0,
               false,
               {
                 fileName: "<stdin>",
-                lineNumber: 213,
+                lineNumber: 221,
                 columnNumber: 17
               },
               this
@@ -223,7 +231,7 @@ function InteractiveApp() {
                     false,
                     {
                       fileName: "<stdin>",
-                      lineNumber: 234,
+                      lineNumber: 243,
                       columnNumber: 19
                     },
                     this
@@ -231,7 +239,7 @@ function InteractiveApp() {
                   /* @__PURE__ */ jsxDEV("div", { style: { display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "center" }, children: [
                     actions.filter((a) => a.type === "draw").length === 0 && /* @__PURE__ */ jsxDEV("div", { style: { fontSize: 14, color: "#777" }, children: "None yet" }, void 0, false, {
                       fileName: "<stdin>",
-                      lineNumber: 246,
+                      lineNumber: 255,
                       columnNumber: 23
                     }, this),
                     actions.filter((a) => a.type === "draw").map((d, idx) => {
@@ -257,12 +265,12 @@ function InteractiveApp() {
                           children: [
                             /* @__PURE__ */ jsxDEV("div", { style: { fontSize: 22, fontWeight: 800, color: "#555", marginTop: 2 }, children: letter }, void 0, false, {
                               fileName: "<stdin>",
-                              lineNumber: 271,
+                              lineNumber: 280,
                               columnNumber: 27
                             }, this),
                             /* @__PURE__ */ jsxDEV("div", { style: { fontSize: 24, fontWeight: 900, marginTop: -2 }, children: d.number }, void 0, false, {
                               fileName: "<stdin>",
-                              lineNumber: 272,
+                              lineNumber: 281,
                               columnNumber: 27
                             }, this)
                           ]
@@ -271,7 +279,7 @@ function InteractiveApp() {
                         true,
                         {
                           fileName: "<stdin>",
-                          lineNumber: 255,
+                          lineNumber: 264,
                           columnNumber: 25
                         },
                         this
@@ -279,7 +287,7 @@ function InteractiveApp() {
                     })
                   ] }, void 0, true, {
                     fileName: "<stdin>",
-                    lineNumber: 244,
+                    lineNumber: 253,
                     columnNumber: 19
                   }, this)
                 ]
@@ -288,14 +296,14 @@ function InteractiveApp() {
               true,
               {
                 fileName: "<stdin>",
-                lineNumber: 221,
+                lineNumber: 230,
                 columnNumber: 17
               },
               this
             )
           ] }, void 0, true, {
             fileName: "<stdin>",
-            lineNumber: 212,
+            lineNumber: 220,
             columnNumber: 15
           }, this)
         },
@@ -303,14 +311,14 @@ function InteractiveApp() {
         false,
         {
           fileName: "<stdin>",
-          lineNumber: 202,
+          lineNumber: 210,
           columnNumber: 13
         },
         this
       ),
       /* @__PURE__ */ jsxDEV(HeaderSmall, {}, void 0, false, {
         fileName: "<stdin>",
-        lineNumber: 280,
+        lineNumber: 289,
         columnNumber: 13
       }, this),
       /* @__PURE__ */ jsxDEV("div", { style: { display: "grid", gridTemplateColumns: "repeat(5, 92px)", gap: 8, justifyContent: "center", marginTop: 6 }, children: exampleCard.map(
@@ -349,12 +357,12 @@ function InteractiveApp() {
                   zIndex: 0
                 } }, void 0, false, {
                   fileName: "<stdin>",
-                  lineNumber: 309,
+                  lineNumber: 318,
                   columnNumber: 25
                 }, this),
                 /* @__PURE__ */ jsxDEV("div", { style: { zIndex: 1, fontSize: 20 }, children: isFree ? "FREE" : cell }, void 0, false, {
                   fileName: "<stdin>",
-                  lineNumber: 319,
+                  lineNumber: 328,
                   columnNumber: 23
                 }, this)
               ]
@@ -363,7 +371,7 @@ function InteractiveApp() {
             true,
             {
               fileName: "<stdin>",
-              lineNumber: 287,
+              lineNumber: 296,
               columnNumber: 21
             },
             this
@@ -371,20 +379,20 @@ function InteractiveApp() {
         })
       ) }, void 0, false, {
         fileName: "<stdin>",
-        lineNumber: 281,
+        lineNumber: 290,
         columnNumber: 13
       }, this)
     ] }, void 0, true, {
       fileName: "<stdin>",
-      lineNumber: 189,
+      lineNumber: 197,
       columnNumber: 11
     }, this) }, void 0, false, {
       fileName: "<stdin>",
-      lineNumber: 177,
+      lineNumber: 185,
       columnNumber: 9
     }, this) }, void 0, false, {
       fileName: "<stdin>",
-      lineNumber: 175,
+      lineNumber: 183,
       columnNumber: 7
     }, this),
     /* @__PURE__ */ jsxDEV("div", { style: { width: 360, height: 640, display: "flex", alignItems: "center", justifyContent: "center" }, children: /* @__PURE__ */ jsxDEV("div", { style: { width: "100%", height: "100%", boxSizing: "border-box", borderRadius: 12, overflow: "hidden", boxShadow: "0 12px 36px rgba(0,0,0,0.12)" }, children: /* @__PURE__ */ jsxDEV(
@@ -405,17 +413,17 @@ function InteractiveApp() {
       false,
       {
         fileName: "<stdin>",
-        lineNumber: 334,
+        lineNumber: 343,
         columnNumber: 11
       },
       this
     ) }, void 0, false, {
       fileName: "<stdin>",
-      lineNumber: 333,
+      lineNumber: 342,
       columnNumber: 9
     }, this) }, void 0, false, {
       fileName: "<stdin>",
-      lineNumber: 332,
+      lineNumber: 341,
       columnNumber: 7
     }, this),
     /* @__PURE__ */ jsxDEV("div", { style: { width: 360, boxSizing: "border-box", padding: 12, display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 12 }, children: [
@@ -434,7 +442,7 @@ function InteractiveApp() {
           false,
           {
             fileName: "<stdin>",
-            lineNumber: 353,
+            lineNumber: 362,
             columnNumber: 11
           },
           this
@@ -450,45 +458,45 @@ function InteractiveApp() {
           false,
           {
             fileName: "<stdin>",
-            lineNumber: 359,
+            lineNumber: 368,
             columnNumber: 11
           },
           this
         )
       ] }, void 0, true, {
         fileName: "<stdin>",
-        lineNumber: 352,
+        lineNumber: 361,
         columnNumber: 9
       }, this),
       /* @__PURE__ */ jsxDEV("div", { style: { width: "100%", fontSize: 12 }, children: [
         /* @__PURE__ */ jsxDEV("div", { style: { fontWeight: 700, marginBottom: 6 }, children: "Recorded actions JSON" }, void 0, false, {
           fileName: "<stdin>",
-          lineNumber: 368,
+          lineNumber: 377,
           columnNumber: 11
         }, this),
         /* @__PURE__ */ jsxDEV("pre", { style: { whiteSpace: "pre-wrap", wordBreak: "break-word", background: "#f7f7f7", padding: 8, borderRadius: 6, maxHeight: 420, overflow: "auto" }, children: JSON.stringify(actions, null, 2) }, void 0, false, {
           fileName: "<stdin>",
-          lineNumber: 369,
+          lineNumber: 378,
           columnNumber: 11
         }, this)
       ] }, void 0, true, {
         fileName: "<stdin>",
-        lineNumber: 367,
+        lineNumber: 376,
         columnNumber: 9
       }, this)
     ] }, void 0, true, {
       fileName: "<stdin>",
-      lineNumber: 351,
+      lineNumber: 360,
       columnNumber: 7
     }, this)
   ] }, void 0, true, {
     fileName: "<stdin>",
-    lineNumber: 173,
+    lineNumber: 181,
     columnNumber: 5
   }, this);
 }
 createRoot(document.getElementById("app")).render(/* @__PURE__ */ jsxDEV(InteractiveApp, {}, void 0, false, {
   fileName: "<stdin>",
-  lineNumber: 378,
+  lineNumber: 387,
   columnNumber: 51
 }));
